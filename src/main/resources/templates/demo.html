@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <title>VeilGate — AI Privacy Gateway</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/png" th:href="@{/img/favicon.png}">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&display=swap">
+  <link rel="stylesheet" th:href="@{/css/guard.css}">
+</head>
+<body>
+<header class="top">
+  <div class="inner">
+    <a class="logo" th:href="@{/}">
+      <img th:src="@{/img/veilgate-256.png}" alt="VeilGate">
+      <span class="name">VeilGate</span>
+      <span class="tag">AI Privacy Gateway</span>
+    </a>
+    <nav class="tabs">
+      <a class="on" th:href="@{/}">데모</a>
+      <a th:href="@{/dashboard}">관리자 대시보드</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <h1>외부 AI 에 보내기 전에, 개인정보를 사내에서 치환합니다</h1>
+    <p>로컬 LLM 이 개인정보를 찾아 N1 · P1 같은 값으로 바꿔 보내고, 답이 오면 원래 값으로 되돌린 뒤 치환 장부를 메모리에서 지웁니다.</p>
+  </section>
+
+  <form class="card" id="guard-form">
+    <h2>프롬프트</h2>
+    <div class="examples">
+      <button type="button" data-example="천동민 고객이 어제 결제가 두 번 됐다고 문의했어. 최근 결제 내역 확인해서 중복 결제가 맞는지 판단하고, 고객에게 보낼 안내 문자도 써 줘.">결제 내역 조회 (사내 DB)</button>
+      <button type="button" data-example="천동민(010-8375-4499) 회원의 복약하는 현재 약 (콘서타, 웰정) 이 부작용이 없는지 확인해줘">복약 확인 (병원)</button>
+      <button type="button" data-example="개발팀 정민서 대리(minseo.jung@corp-example.co.kr, 010-6604-2287)에게 보낼 인사평가 피드백 메일을 써 줘. 올해 결제 시스템 장애 대응을 주도해 다운타임을 40% 줄였지만, 작업 문서화가 부족하다는 의견이 있었어.">인사 피드백 (사내망)</button>
+    </div>
+    <div class="form-grid">
+      <textarea name="input" id="guard-input" th:text="${input}"></textarea>
+    </div>
+    <div class="form-actions">
+      <div class="checks">
+        <span class="muted">보호할 정보</span>
+        <label th:each="t : ${types}">
+          <input type="checkbox" name="protect" th:value="${t.name()}" th:checked="${protectedTypes.contains(t)}">
+          <span th:text="${t.label + ' ' + t.tokenLetter + '1'}"></span>
+        </label>
+      </div>
+      <button class="go" type="submit" id="guard-go">VeilGate 로 보내기</button>
+    </div>
+  </form>
+
+  <section id="flow" hidden>
+    <div class="card">
+      <div class="track" id="track">
+        <div class="dot" data-dot="1"><span class="ball">1</span><span>입력</span><span class="bar"><i></i></span></div>
+        <div class="dot" data-dot="2"><span class="ball">2</span><span>로컬 LLM 탐지</span><span class="bar"><i></i></span></div>
+        <div class="dot" data-dot="3"><span class="ball">3</span><span>치환 · 보관</span><span class="bar"><i></i></span></div>
+        <div class="dot" data-dot="4"><span class="ball">4</span><span>외부 AI 요청</span><span class="bar"><i></i></span></div>
+        <div class="dot" data-dot="5"><span class="ball">5</span><span>사내 DB 조회</span><span class="bar"><i></i></span></div>
+        <div class="dot" data-dot="6"><span class="ball">6</span><span>외부 AI 답변</span><span class="bar"><i></i></span></div>
+        <div class="dot" data-dot="7"><span class="ball">7</span><span>재치환</span><span class="bar"><i></i></span></div>
+        <div class="dot" data-dot="8"><span class="ball">8</span><span>전달 · 파기</span><span class="bar"><i></i></span></div>
+      </div>
+    </div>
+
+    <div class="steps" id="steps">
+      <div class="step" data-step="1">
+        <div class="box">
+          <div class="row"><h3>사용자 입력</h3><span class="state"></span><span class="zone in">사내</span></div>
+          <div class="loader"></div>
+          <div class="content"></div>
+        </div>
+      </div>
+      <div class="step" data-step="2">
+        <div class="box">
+          <div class="row"><h3>로컬 LLM 이 개인정보를 찾음</h3><span class="state"></span><span class="zone in">사내</span></div>
+          <div class="loader"></div>
+          <div class="content"></div>
+        </div>
+      </div>
+      <div class="step" data-step="3">
+        <div class="box">
+          <div class="row"><h3>치환하고 메모리 저장소에 보관</h3><span class="state"></span><span class="zone in">사내</span></div>
+          <div class="loader"></div>
+          <div class="content"></div>
+        </div>
+      </div>
+      <div class="step outside" data-step="4">
+        <div class="box">
+          <div class="row"><h3 id="ask-title">외부 AI 에 요청</h3><span class="state"></span><span class="zone out">외부 · 개인정보 없음</span></div>
+          <div class="loader"></div>
+          <div class="content"></div>
+        </div>
+      </div>
+      <div class="step" data-step="5">
+        <div class="box">
+          <div class="row"><h3>사내 DB 조회 · 결과 치환</h3><span class="state"></span><span class="zone in">사내</span></div>
+          <div class="loader"></div>
+          <div class="content"></div>
+        </div>
+      </div>
+      <div class="step outside" data-step="6">
+        <div class="box">
+          <div class="row"><h3 id="answer-title">외부 AI 답변</h3><span class="state"></span><span class="zone out">외부 · 개인정보 없음</span></div>
+          <div class="loader"></div>
+          <div class="content"></div>
+        </div>
+      </div>
+      <div class="step" data-step="7">
+        <div class="box">
+          <div class="row"><h3>저장소에서 찾아 원래 값으로 재치환</h3><span class="state"></span><span class="zone in">사내</span></div>
+          <div class="loader"></div>
+          <div class="content"></div>
+        </div>
+      </div>
+      <div class="step" data-step="8">
+        <div class="box">
+          <div class="row"><h3>결과 전달 · 메모리 파기</h3><span class="state"></span><span class="zone in">사내</span></div>
+          <div class="loader"></div>
+          <div class="content"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+  const form = document.getElementById('guard-form');
+  const goButton = document.getElementById('guard-go');
+  const flow = document.getElementById('flow');
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const WAIT_TEXT = {
+    1: '입력을 받는 중…',
+    2: '로컬 LLM 이 개인정보를 찾는 중…',
+    3: '개인정보를 치환하고 메모리 저장소에 보관하는 중…',
+    4: '외부 AI 가 요청을 읽는 중…',
+    5: '사내 DB 를 조회하고 결과의 개인정보를 치환하는 중…',
+    6: '외부 AI 가 답을 만드는 중…',
+    7: '저장소에서 치환 값을 찾아 되돌리는 중…',
+    8: '결과를 전달하고 치환 장부를 지우는 중…',
+  };
+
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function segSpan(seg, text) {
+    const span = el('span', 'seg ' + seg.cssClass, text !== undefined ? text : seg.text);
+    if (seg.label) span.title = seg.label;
+    return span;
+  }
+
+  function textBox(segments) {
+    const box = el('div', 'text');
+    segments.forEach((seg) => box.appendChild(segSpan(seg)));
+    return box;
+  }
+
+  function stepNode(n) { return document.querySelector('.step[data-step="' + n + '"]'); }
+  function dotNode(n) { return document.querySelector('.dot[data-dot="' + n + '"]'); }
+
+  function activate(n) {
+    const step = stepNode(n);
+    step.classList.add('active');
+    dotNode(n).classList.add('active');
+    step.querySelector('.state').innerHTML = '<span class="spinner"></span>';
+    const timer = el('span', '', '');
+    step.querySelector('.state').appendChild(timer);
+    const startedAt = performance.now();
+    const ticker = setInterval(() => { timer.textContent = ((performance.now() - startedAt) / 1000).toFixed(1) + 's'; }, 100);
+    const content = step.querySelector('.content');
+    content.innerHTML = '';
+    content.appendChild(el('div', 'wait-text', WAIT_TEXT[n]));
+    step.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return { step, content, ticker, startedAt };
+  }
+
+  function complete(ctx, n, label) {
+    clearInterval(ctx.ticker);
+    ctx.step.classList.remove('active');
+    ctx.step.classList.add('done');
+    const dot = dotNode(n);
+    dot.classList.remove('active');
+    dot.classList.add('done');
+    dot.querySelector('.ball').textContent = '✓';
+    ctx.step.querySelector('.state').innerHTML = '<span class="ok">✓</span> ' + label;
+  }
+
+  async function post(url, body) {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : '{}',
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || ('요청 실패 ' + response.status));
+    }
+    return response.json();
+  }
+
+  // 원본의 개인정보가 하나씩 치환 값으로 뒤집힌다
+  async function flipToTokens(box, segments) {
+    const spans = [];
+    segments.forEach((seg) => { const span = segSpan(seg); box.appendChild(span); spans.push({ seg, span }); });
+    await sleep(500);
+    for (const item of spans) {
+      if (item.seg.kind !== 'MASKED') continue;
+      item.span.classList.add('flip');
+      await sleep(250);
+      item.span.textContent = item.seg.token;
+      item.span.className = 'seg seg-token flip';
+      await sleep(350);
+    }
+  }
+
+  // 치환 값이 하나씩 원래 개인정보로 되돌아온다
+  async function flipToOriginals(box, segments) {
+    const spans = [];
+    segments.forEach((seg) => {
+      const isRestored = seg.kind === 'RESTORED';
+      const span = isRestored ? el('span', 'seg seg-token', seg.token) : segSpan(seg);
+      box.appendChild(span);
+      spans.push({ seg, span, isRestored });
+    });
+    await sleep(500);
+    for (const item of spans) {
+      if (!item.isRestored) continue;
+      item.span.classList.add('flip');
+      await sleep(250);
+      item.span.textContent = item.seg.text;
+      item.span.className = 'seg seg-restored flip';
+      item.span.title = item.seg.label;
+      await sleep(300);
+    }
+  }
+
+  // 외부 AI 의 답을 타자 치듯 보여 준다
+  async function typeOut(box, segments) {
+    box.classList.add('caret');
+    for (const seg of segments) {
+      const isPlain = seg.kind === 'PLAIN';
+      if (!isPlain) { box.appendChild(segSpan(seg)); await sleep(60); continue; }
+      const span = el('span', '', '');
+      box.appendChild(span);
+      for (let i = 0; i < seg.text.length; i += 3) {
+        span.textContent = seg.text.slice(0, i + 3);
+        await sleep(12);
+      }
+    }
+    box.classList.remove('caret');
+  }
+
+  function foundList(decisions) {
+    const wrap = el('div', 'found');
+    if (decisions.length === 0) wrap.appendChild(el('span', 'muted', '찾은 개인정보가 없습니다.'));
+    decisions.forEach((d, i) => {
+      const item = el('span', 'item reveal');
+      item.style.animationDelay = (i * 150) + 'ms';
+      item.appendChild(el('span', d.token ? 'seg seg-masked' : 'seg seg-kept', d.span.text));
+      item.appendChild(el('span', 'muted', d.span.typeLabel + ' · ' + d.span.sourceLabel));
+      if (d.token) { item.appendChild(el('span', 'arrow', '→')); item.appendChild(el('span', 'seg seg-token', d.token)); }
+      if (!d.token) item.appendChild(el('span', 'muted', '보호 대상 아님'));
+      wrap.appendChild(item);
+    });
+    return wrap;
+  }
+
+  function vaultBox(mappings, vaultId, expiresAt) {
+    const vault = el('div', 'vault reveal');
+    const inner = el('div');
+    inner.appendChild(el('div', 'title', '저장소에 치환 값 ' + mappings.length + '개 보관'));
+    const until = expiresAt ? expiresAt.substring(11, 19) : '';
+    inner.appendChild(el('div', 'muted', '장부 ' + vaultId.substring(0, 8) + ' · ' + until + ' 까지만 보관'));
+    const list = el('div', 'found');
+    list.style.marginTop = '8px';
+    list.id = 'vault-items';
+    mappings.forEach((m) => {
+      const item = el('span', 'item');
+      item.appendChild(el('span', 'seg seg-token', m.token));
+      item.appendChild(el('span', 'arrow', '='));
+      item.appendChild(el('span', '', m.original));
+      list.appendChild(item);
+    });
+    inner.appendChild(list);
+    vault.appendChild(inner);
+    return vault;
+  }
+
+  const TOKEN_CELL = /^[A-Z]\d+$/;
+
+  // 표 하나를 그린다. compareTo 가 있으면 값이 바뀐 칸(치환된 칸)을 칠한다
+  function miniTable(table, kind, compareTo) {
+    const wrap = el('div', 'mini-wrap');
+    const t = el('table', 'mini');
+    const head = el('tr');
+    table.columns.forEach((c) => head.appendChild(el('th', '', c)));
+    t.appendChild(head);
+    if (table.rows.length === 0) {
+      const tr = el('tr'); const td = el('td', 'muted', '조회 결과 없음'); td.colSpan = table.columns.length; tr.appendChild(td); t.appendChild(tr);
+    }
+    table.rows.forEach((row, r) => {
+      const tr = el('tr');
+      row.forEach((cell, c) => {
+        const td = el('td');
+        const other = compareTo && compareTo.rows[r] ? compareTo.rows[r][c] : cell;
+        const changed = other !== cell;
+        if (kind === 'masked' && TOKEN_CELL.test(cell) && changed) td.appendChild(el('span', 'seg seg-token', cell));
+        else if (kind === 'original' && changed) td.appendChild(el('span', 'seg seg-masked', cell));
+        else td.textContent = cell;
+        tr.appendChild(td);
+      });
+      t.appendChild(tr);
+    });
+    wrap.appendChild(t);
+    return wrap;
+  }
+
+  function addVaultItems(mappings) {
+    const list = document.getElementById('vault-items');
+    if (!list) return;
+    mappings.forEach((m) => {
+      const item = el('span', 'item reveal');
+      item.appendChild(el('span', 'seg seg-token', m.token));
+      item.appendChild(el('span', 'arrow', '='));
+      item.appendChild(el('span', '', m.original));
+      list.appendChild(item);
+    });
+    const title = document.querySelector('.vault .title');
+    if (title) title.textContent = '저장소에 치환 값 ' + list.children.length + '개 보관';
+  }
+
+  async function runFlow(input, protect) {
+    flow.hidden = false;
+    document.querySelectorAll('.step').forEach((st) => { st.classList.remove('active', 'done'); st.querySelector('.content').innerHTML = ''; st.querySelector('.state').innerHTML = ''; });
+    document.querySelectorAll('.dot').forEach((d, i) => { d.classList.remove('active', 'done'); d.querySelector('.ball').textContent = String(i + 1); });
+
+    // 1. 입력
+    let ctx = activate(1);
+    const { runId } = await post('/api/run', { input, protect });
+    await sleep(400);
+    ctx.content.innerHTML = '';
+    ctx.content.appendChild(el('div', 'text reveal', input));
+    complete(ctx, 1, '받음');
+    await sleep(300);
+
+    // 2. 로컬 LLM 탐지
+    ctx = activate(2);
+    const detect = await post('/api/run/' + runId + '/detect');
+    ctx.content.innerHTML = '';
+    const detectBox = el('div', 'text reveal');
+    detect.originalSegments.forEach((seg) => detectBox.appendChild(segSpan(seg)));
+    ctx.content.appendChild(detectBox);
+    ctx.content.appendChild(foundList(detect.decisions));
+    complete(ctx, 2, (detect.usedLocalLlm ? detect.localModel : '예비 사전') + ' · ' + detect.millis + 'ms');
+    await sleep(600);
+
+    // 3. 치환 · 보관
+    ctx = activate(3);
+    const mask = await post('/api/run/' + runId + '/mask');
+    ctx.content.innerHTML = '';
+    if (mask.blocked) {
+      const blocked = el('div', 'blocked reveal');
+      blocked.appendChild(el('strong', '', '외부로 보내지 않았습니다'));
+      blocked.appendChild(el('span', '', mask.blockReason));
+      ctx.content.appendChild(blocked);
+      complete(ctx, 3, '차단');
+      return;
+    }
+    const maskBox = el('div', 'text');
+    ctx.content.appendChild(maskBox);
+    await flipToTokens(maskBox, mask.originalSegments);
+    ctx.content.appendChild(vaultBox(mask.mappings, mask.vaultId, mask.vaultExpiresAt));
+    complete(ctx, 3, '치환 값 ' + mask.mappings.length + '개 보관');
+    await sleep(600);
+
+    // 4. 외부 AI 요청
+    ctx = activate(4);
+    const sent = el('div');
+    sent.appendChild(el('div', 'label muted', '보낸 프롬프트'));
+    sent.appendChild(textBox(mask.maskedSegments));
+    ctx.content.innerHTML = '';
+    ctx.content.appendChild(sent);
+    const ask = await post('/api/run/' + runId + '/ask');
+    document.getElementById('ask-title').textContent = '외부 AI 에 요청 · ' + ask.externalModel;
+    const askResult = el('div', 'call reveal');
+    if (ask.toolRequests.length > 0) {
+      askResult.appendChild(el('div', 'muted', '외부 AI 가 사내 DB 조회를 요청했습니다'));
+      ask.toolRequests.forEach((req) => {
+        const line = el('div', 'line');
+        line.appendChild(el('span', 'ext', req.name + '(' + req.arguments + ')'));
+        askResult.appendChild(line);
+      });
+    } else {
+      askResult.appendChild(el('div', 'muted', '외부 AI 가 DB 조회 없이 바로 답했습니다'));
+    }
+    ctx.content.appendChild(askResult);
+    complete(ctx, 4, (ask.usedExternalLlm ? '응답' : '연결 실패') + ' · ' + ask.millis + 'ms');
+    await sleep(600);
+
+    // 5. 사내 DB 조회 · 결과 치환
+    ctx = activate(5);
+    const tools = await post('/api/run/' + runId + '/tools');
+    await sleep(400);
+    ctx.content.innerHTML = '';
+    if (tools.skipped) {
+      ctx.content.appendChild(el('div', 'wait-text reveal', '조회할 것이 없어 건너뜁니다.'));
+      complete(ctx, 5, '건너뜀');
+    } else {
+      for (const exe of tools.executions) {
+        const block = el('div', 'tool-block reveal');
+        const call = el('div', 'call');
+        const l1 = el('div', 'line'); l1.appendChild(el('span', 'who', '외부 AI 가 본 호출')); l1.appendChild(el('span', 'ext', exe.maskedCall));
+        const l2 = el('div', 'line'); l2.appendChild(el('span', 'who', '사내에서 실행')); l2.appendChild(el('span', 'int', exe.realCall));
+        call.appendChild(l1); call.appendChild(l2);
+        block.appendChild(call);
+        const cols = el('div', 'two-col');
+        const left = el('div'); left.appendChild(el('div', 'label', '사내 DB 원본 · 외부로 나가지 않음')); left.appendChild(miniTable(exe.originalTable, 'original', exe.maskedTable));
+        const right = el('div'); right.appendChild(el('div', 'label', '외부 AI 에 넘긴 결과')); right.appendChild(miniTable(exe.maskedTable, 'masked', exe.originalTable));
+        cols.appendChild(left); cols.appendChild(right);
+        block.appendChild(cols);
+        ctx.content.appendChild(block);
+        await sleep(500);
+      }
+      addVaultItems(tools.newTokens);
+      complete(ctx, 5, '조회 ' + tools.executions.length + '건 · 치환 값 ' + tools.newTokens.length + '개 추가');
+    }
+    await sleep(600);
+
+    // 6. 외부 AI 답변
+    ctx = activate(6);
+    const answerBox = el('div', 'text');
+    answerBox.appendChild(el('span', 'wait-text', '답을 기다리는 중…'));
+    ctx.content.innerHTML = '';
+    ctx.content.appendChild(answerBox);
+    const answer = await post('/api/run/' + runId + '/answer');
+    answerBox.innerHTML = '';
+    await typeOut(answerBox, answer.answerSegments);
+    complete(ctx, 6, answer.millis > 0 ? answer.millis + 'ms' : '4단계 답 사용');
+    await sleep(600);
+
+    // 7. 재치환
+    ctx = activate(7);
+    const restore = await post('/api/run/' + runId + '/restore');
+    ctx.content.innerHTML = '';
+    const restoreBox = el('div', 'text');
+    ctx.content.appendChild(restoreBox);
+    await flipToOriginals(restoreBox, restore.restoredSegments);
+    complete(ctx, 7, '되돌림');
+    await sleep(600);
+
+    // 8. 전달 · 파기
+    ctx = activate(8);
+    await sleep(500);
+    const finish = await post('/api/run/' + runId + '/finish');
+    const vaultItems = document.querySelectorAll('#vault-items .item');
+    for (const item of vaultItems) { item.classList.add('gone'); await sleep(200); }
+    ctx.content.innerHTML = '';
+    const destroyed = el('div', 'vault destroyed reveal');
+    const info = el('div');
+    info.appendChild(el('div', 'title', '치환 값 ' + finish.destroyedCount + '개 파기 완료'));
+    info.appendChild(el('div', 'muted', '저장소에 남은 치환 값 ' + finish.vaultRemaining + '개 · 외부 AI 는 원래 개인정보를 한 번도 보지 못했습니다'));
+    destroyed.appendChild(info);
+    ctx.content.appendChild(destroyed);
+    complete(ctx, 8, '전체 ' + (finish.totalMillis / 1000).toFixed(1) + 's');
+  }
+
+  document.querySelectorAll('[data-example]').forEach((button) => {
+    button.addEventListener('click', () => { document.getElementById('guard-input').value = button.dataset.example; });
+  });
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const input = document.getElementById('guard-input').value;
+    const protect = Array.from(form.querySelectorAll('input[name="protect"]:checked')).map((c) => c.value);
+    goButton.disabled = true;
+    goButton.textContent = '처리 중…';
+    try {
+      await runFlow(input, protect);
+    } catch (error) {
+      const active = document.querySelector('.step.active');
+      if (active) {
+        active.querySelector('.content').innerHTML = '';
+        const blocked = el('div', 'blocked');
+        blocked.appendChild(el('strong', '', '처리 중 오류'));
+        blocked.appendChild(el('span', '', error.message));
+        active.querySelector('.content').appendChild(blocked);
+        active.querySelector('.state').textContent = '오류';
+      }
+    } finally {
+      goButton.disabled = false;
+      goButton.textContent = 'VeilGate 로 보내기';
+    }
+  });
+})();
+</script>
+</body>
+</html>

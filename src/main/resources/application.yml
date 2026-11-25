@@ -1,0 +1,20 @@
+server:
+  port: 8080
+
+spring:
+  config:
+    # .env 를 읽는다: 이 프로젝트 폴더에 있으면 그것을, 없으면 옆의 prompt-main/.env 를 쓴다
+    import:
+      - optional:file:../prompt-main/.env[.properties]
+      - optional:file:./.env[.properties]
+  thymeleaf:
+    cache: false
+
+guard:
+  llm:
+    # LLM_API_* 가 있으면 그것을, 없으면 OPENROUTER_API_* 를 쓴다
+    endpoint: ${LLM_API_ENDPOINT:${OPENROUTER_API_ENDPOINT:https://openrouter.ai/api/v1}}
+    api-key: ${LLM_API_KEY:${OPENROUTER_API_KEY:}}
+    # 시연용: 로컬 LLM 자리도 OpenRouter 모델로 대신한다
+    local-model: ${LOCAL_LLM_MODEL:}
+    external-model: ${EXTERNAL_LLM_MODEL:}

@@ -1,0 +1,70 @@
+# 비밀 값
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Gradle · Kotlin 빌드 결과
+build/
+out/
+.gradle/
+.kotlin/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.fleet/
+.project
+.classpath
+.settings/
+bin/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 로그 · 임시 파일
+*.log
+logs/
+tmp/
+*.tmp
+*.bak
+*.mutbak
+*.orig
+*.swp
+hs_err_pid*
+
+# AI 도구 설정 · 작업 흔적
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+GEMINI.md
+.claude/
+.omc/
+.agents/
+.codex/
+.gemini/
+.cursor/
+.cursorrules
+.cursorignore
+.windsurf/
+.windsurfrules
+.aider*
+.continue/
+.cline/
+.clinerules
+.roo/
+.roomodes
+.kiro/
+.serena/
+.specstory/
+.copilot/
+.github/copilot-instructions.md
+.mcp.json
+memory-bank/
